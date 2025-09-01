@@ -1,0 +1,64 @@
+name: Python CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests
+      run: |
+        pytest
+
+    # ➕ Build Docker image
+    - name: Build Docker image
+      run: docker build -t hello-ci:latest .
+
+    # ➕ Save image to file
+    - name: Save Docker image to tar
+      run: docker save hello-ci:latest -o hello-ci.tar
+
+    # ➕ Copy image to local server
+    - name: Copy image to local server
+      uses: appleboy/scp-action@v0.1.3
+      with:
+        host: ${{ secrets.LOCAL_SERVER_IP }}
+        username: anas
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        source: "hello-ci.tar"
+        target: "~/hello-ci/"
+
+    # ➕ SSH and run container
+    - name: Deploy to local server
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.LOCAL_SERVER_IP }}
+        username: anas
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: 22
+        script: |
+          cd ~/hello-ci
+          docker load -i hello-ci.tar
+          docker stop hello-ci-container || true
+          docker rm hello-ci-container || true
+          docker run -d --name hello-ci-container -p 8000:8000 hello-ci:latest
+
